@@ -1,5 +1,6 @@
 import os
 import re
+import ffmpeg
 
 '''Given a file path, the function pulls relevant audio file paths to consider
    returns a list of the file paths as well as the actual name of the file 
@@ -28,7 +29,10 @@ def getListOfFiles(dirName):
     return allFiles, fileNames   
 
 def main():
-    files = getListOfFiles("C:/Users/klu/Music/iTunes")
+    files = getListOfFiles("/home/kevlu93/Downloads/Bjork")
+    print(files[1])
+    input_stream = ffmpeg.probe(files[0][1])
+    print(input_stream)
 
 if __name__ == "__main__":
     main()
