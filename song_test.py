@@ -6,9 +6,9 @@ class Song_Test(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.file_paths = converter.getListOfFiles('/home/kevlu93/Downloads')
-        cls.test_file = [x for x in cls.file_paths[0] if x.find('Rufus') >= 0][0]
-        cls.test_song = Song(cls.test_file)
+        cls.file_paths = converter.getListOfFiles('test_song.flac')
+        cls.test_files = cls.file_paths[0]
+        cls.test_song = Song(cls.test_files[0], cls.test_files[1])
 
     #test get sample rate method
     def test_sample_rate(self):
@@ -27,6 +27,9 @@ class Song_Test(unittest.TestCase):
     def test_has_tag(self):
         self.assertTrue(self.test_song.has_tag('VOCALS'))
         self.assertFalse(self.test_song.has_tag('fake tag'))
+
+    def test_get_max_volume(self):
+        self.assertEqual(self.test_song.get_max_volume(), -1.0)
 
 if __name__ == 'main':
     unittest.main()

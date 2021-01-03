@@ -5,19 +5,22 @@ import re
 class Song:
 
     #constructor
-    def __init__(self, path):
+    def __init__(self, path, filename):
         #instance variables
         #input stream of the file
         self.input_stream = ffmpeg.input(path)
         #ffprobe info
         self.stream_info = ffmpeg.probe(path)['streams'][0]
         self.format_info = ffmpeg.probe(path)['format']
-        #codec info
+        #codec and container info
         self.codec = self.stream_info['codec_name']
+        self.format = self.format_info['format_name']
+        #song file name
+        self.song_name = filename.split('.')[0]
         #song quality info
         self.sample_rate = int(self.stream_info['sample_rate'])
-        self.bit_rate = int(self.stream_info['bits_per_raw_sample'])
-        self.format = self.format_info['format_name']
+        self.bit_depth = None if self.format not in ['aiff', 'flac', 'wav'] else int(self.stream_info['sample_fmt'].replace('s',''))
+        self.bit_rate = None if self.format not in ['mp3', 'ogg', 'aac'] else int(self.stream_info['bit_rate'])
         #tags as a dictionary
         self.tags = self.format_info['tags']
         #initialize volume info
@@ -40,11 +43,17 @@ class Song:
     def get_sample_rate(self):
         return self.sample_rate
 
+    def get_bit_depth(self):
+        return self.bit_depth
+
     def get_bit_rate(self):
         return self.bit_rate
 
     def get_format(self):
         return self.format
+
+    def get_song_name(self):
+        return self.song_name
 
     def get_tags(self):
         return self.tags
@@ -70,7 +79,6 @@ class Song:
         cmd_output = process.stderr.readlines()
         for line in cmd_output:
             if re.search('(mean|max)_volume', line):
-                print('found volume line')
                 db = float(line.split(':')[1].replace('dB', '').strip())
                 if re.search('mean', line):
                     self.volume['mean'] = db
