@@ -41,8 +41,8 @@ struct ProbeStream {
     bit_rate: Option<usize>,
 }
 
-/// Helper function to help Serde deserialize values that we want to be numeric, 
-/// but coded as a string by ffprobe 
+/// Helper function to help Serde deserialize values that we want to be numeric,
+/// but coded as a string by ffprobe
 fn from_string<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
 where
     D: Deserializer<'de>,
@@ -74,7 +74,6 @@ fn run_ffprobe(path: &str) -> io::Result<Probe> {
     Ok(serde_json::from_slice(&output.stdout)?)
 }
 
-
 /// Initializes a Song struct
 pub fn from_file(path: &str) -> Option<SongInfo> {
     let probe_result = run_ffprobe(path);
@@ -85,13 +84,14 @@ pub fn from_file(path: &str) -> Option<SongInfo> {
                 let format_type = match song_format.as_str() {
                     "aiff" | "flac" | "wav" => AudioFormatType::Lossless,
                     "mp3" | "ogg" | "aac" => AudioFormatType::Lossy,
-                    _ => {AudioFormatType::Unsupported},
+                    _ => AudioFormatType::Unsupported,
                 };
                 // splitting the path will return the full file name
-                // then extract the name before the period 
+                // then extract the name before the period
                 // since this part of code only runs if a valid path was found
                 // unwraps are guaranteed to work, so this will not panic
-                let song_name = String::from(path.split('/').last().unwrap().split('.').next().unwrap());
+                let song_name =
+                    String::from(path.split('/').last().unwrap().split('.').next().unwrap());
                 // based on the format type, bit info will either be the sample_fmt, or bit_rate
                 let bit_info = match format_type {
                     AudioFormatType::Lossless => s[0].sample_fmt.unwrap_or(0),
@@ -108,7 +108,10 @@ pub fn from_file(path: &str) -> Option<SongInfo> {
                     tags: f.tags,
                 })
             }
-            _ => {log::error!("Missing streams or format for {}", path); None},
+            _ => {
+                log::error!("Missing streams or format for {}", path);
+                None
+            }
         }
     } else {
         log::error!("ffprobe could not handle {} correctly!", path);
@@ -120,14 +123,14 @@ impl SongInfo {
     pub fn get_format_type(&self) -> &AudioFormatType {
         &self.format_type
     }
-    
+
     pub fn get_song_name(&self) -> &str {
         self.song_name.as_str()
     }
 
     pub fn is_rekordbox_format(&self) -> bool {
         match self.format.as_str() {
-            "aiff"|"wav"|"mp3"|"aac" => true,
+            "aiff" | "wav" | "mp3" | "aac" => true,
             _ => false,
         }
     }

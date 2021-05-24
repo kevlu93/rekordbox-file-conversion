@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::io::{self, Result, Write};
 use std::process::{Command, Output};
-use std::{fs, path, cmp};
+use std::{cmp, fs, path};
 mod song_info;
 
 /// Function iterates through the directory and grabs file paths
@@ -29,13 +29,13 @@ fn build_list_of_files(dir: &path::Path, files: &mut Vec<String>) {
             }
         } else {
             log::error!("Error reading directory: {}", dir.display());
-        } 
+        }
     } else {
         log::error!("{} is not a directory!", dir.display());
     }
 }
-
-// TO-DO join options together to create ffmpeg output command 
+/*
+// TO-DO join options together to create ffmpeg output command
 fn convert_song(files: Vec<String>) {
     for song in files.iter().filter_map(|s| song_info::from_file(s.as_str())) {
         match song.get_format_type() {
@@ -68,9 +68,43 @@ fn convert_song(files: Vec<String>) {
         }
     }
 }
+*/
 
-fn get_song_volume(path: &str) {
-    // TO-DO parse volume detect to get max volume info
+// Helper function to find the peak RMS of an audio file
+fn get_max_volume(path: &str) -> Option<f64> {
+    let output = Command::new("ffmpeg")
+        .arg("-i")
+        .arg(path)
+        .arg("-filter:a")
+        .arg("volumedetect")
+        .arg("-f")
+        .arg("null")
+        .arg("dummy.mp3") //dummy output that ffmpeg requires
+        .output()
+        .expect("failed to get volume");
+    let mut max_volume = None;
+    let vol_output = String::from_utf8(output.stderr);
+    if let Ok(vol_output) = vol_output {
+        // Find the line with max volume
+        let line: String = vol_output
+            .lines()
+            .filter(|s| s.ends_with("dB"))
+            .filter(|s| s.contains("max_volume"))
+            .collect();
+        // Parse the max volume line to find the level
+        let mut parsed_num: Vec<f64> = line
+            .split(' ')
+            .filter_map(|s| s.parse::<f64>().ok())
+            .collect();
+        if parsed_num.len() != 1 {
+            log::error!("Volume for {} not parsed correctly!", path);
+        } else {
+            max_volume = parsed_num.pop();
+        }
+    } else {
+        log::error!("Could not parse output from volumedetect for {}", path);
+    }
+    max_volume
 }
 
 fn main() {
@@ -78,7 +112,16 @@ fn main() {
     let mut files: Vec<String> = vec![];
     build_list_of_files(path::Path::new("/home/klu/Musi/"), &mut files);
     println!("list of files: {:?}", files);
-    ()
+    println!("max vol of file: {}", get_max_volume("/home/klu/Music/Hanna - Intercession, On Behalf.flac").unwrap());
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn test_get_volume() {
+        assert_eq!(get_max_volume("/home/klu/Music/Hanna - Intercession, On Behalf.flac").unwrap(), -1.0);
+        assert!(get_max_volume("dummy.mp3").is_none());
+    }
+}
