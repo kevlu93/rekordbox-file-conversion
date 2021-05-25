@@ -1,8 +1,10 @@
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use std::io;
 use std::process::Command;
+use std::path;
 
 /// enum for various audio formats
+#[derive(Debug)]
 pub enum AudioFormatType {
     Lossless,
     Lossy,
@@ -10,11 +12,12 @@ pub enum AudioFormatType {
 }
 
 /// Song struct that contains information to use for ffmpeg conversion command
+#[derive(Debug)]
 pub struct SongInfo {
     codec: String,
     format: String,
     format_type: AudioFormatType,
-    song_name: String,
+    song_path: String,
     sample_rate: usize,
     bit_info: usize,
     tags: Option<serde_json::Value>,
@@ -90,8 +93,9 @@ pub fn from_file(path: &str) -> Option<SongInfo> {
                 // then extract the name before the period
                 // since this part of code only runs if a valid path was found
                 // unwraps are guaranteed to work, so this will not panic
-                let song_name =
-                    String::from(path.split('/').last().unwrap().split('.').next().unwrap());
+                // TO-DO: This won't work with Windows! Look over PathBuf options to see how to extract the filename
+                
+                
                 // based on the format type, bit info will either be the sample_fmt, or bit_rate
                 let bit_info = match format_type {
                     AudioFormatType::Lossless => s[0].sample_fmt.unwrap_or(0),
@@ -102,7 +106,7 @@ pub fn from_file(path: &str) -> Option<SongInfo> {
                     codec: s[0].codec_name.clone(),
                     format: song_format,
                     format_type,
-                    song_name,
+                    song_path: path.to_string(),
                     sample_rate: s[0].sample_rate.unwrap_or(0),
                     bit_info,
                     tags: f.tags,
@@ -120,12 +124,42 @@ pub fn from_file(path: &str) -> Option<SongInfo> {
 }
 
 impl SongInfo {
+    pub fn get_codec(&self) -> &str {
+        self.codec.as_str()
+    }
+
+    pub fn get_format(&self) -> &str {
+        self.format.as_str()
+    }
+
     pub fn get_format_type(&self) -> &AudioFormatType {
         &self.format_type
     }
 
-    pub fn get_song_name(&self) -> &str {
-        self.song_name.as_str()
+    pub fn get_song_path(&self) -> &str {
+        &self.song_path
+    }
+
+    pub fn get_song_name(&self) -> Option<&str> {
+        let path = path::Path::new(&self.song_path);
+        if let Some(s) = path.file_name().unwrap().to_str() {
+            return s.split('.').next();
+        } else {
+            log::error!("Unable to parse out file name from path for {}", self.song_path);
+        }
+        None
+    }
+
+    pub fn get_sample_rate(&self) -> &usize {
+        &self.sample_rate
+    }
+    
+    pub fn get_bit_info(&self) -> &usize {
+        &self.bit_info
+    }
+    
+    pub fn get_tags(&self) -> &Option<serde_json::Value> {
+        &self.tags
     }
 
     pub fn is_rekordbox_format(&self) -> bool {
@@ -168,9 +202,16 @@ mod tests {
     fn test_create_songinfo_from_file() {
         let info = from_file("/home/klu/Music/soy division mix.mp3").unwrap();
         assert_eq!(None, info.tags);
-        assert_eq!("soy division mix", info.song_name);
+        assert_eq!("/home/klu/Music/soy division mix.mp3", info.song_path);
         assert_eq!(320000, info.bit_info);
 
         assert!(from_file("missing.mp3").is_none());
+    }
+
+    fn test_get_song_name_from_file() {
+        let info = from_file("/home/klu/Music/soy division mix.mp3").unwrap();
+        assert_eq!("soy division mix", info.get_song_name().unwrap());
+
+        assert!(from_file("dummy").unwrap().get_song_name().is_none());
     }
 }

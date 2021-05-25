@@ -2,10 +2,11 @@ use serde::Deserialize;
 use std::io::{self, Result, Write};
 use std::process::{Command, Output};
 use std::{cmp, fs, path};
+use song_info::AudioFormatType;
 mod song_info;
 
 /// Function iterates through the directory and grabs file paths
-fn build_list_of_files(dir: &path::Path, files: &mut Vec<String>) {
+pub fn build_list_of_files(dir: &path::Path, files: &mut Vec<String>) {
     if dir.is_dir() {
         if let Ok(entries) = fs::read_dir(dir) {
             // Iterate through entries in the directory
@@ -34,41 +35,97 @@ fn build_list_of_files(dir: &path::Path, files: &mut Vec<String>) {
         log::error!("{} is not a directory!", dir.display());
     }
 }
-/*
-// TO-DO join options together to create ffmpeg output command
-fn convert_song(files: Vec<String>) {
-    for song in files.iter().filter_map(|s| song_info::from_file(s.as_str())) {
+
+// TO-DO: Implement control flow so that volumedetect is used if volume normalization is desired
+// Because volumedetect is a time-consuming process, user might not want to do it.
+// Perhaps implement concurrency to speed up conversions
+pub fn convert_song(files: Vec<String>, output_dir: &str, conversion_tag: &str) {
+    for song in files.iter().filter_map(|s| song_info::from_file(s)) {
         match song.get_format_type() {
-            Unsupported => {log::error!("{} has an unsupported file format!", song.get_song_name()); continue;},
+            AudioFormatType::Unsupported => {log::error!("{} has an unsupported file format!", song.get_song_path()); continue;},
             _ => {
+                let song_name;
+                match song.get_song_name() {
+                    Some(s) => {song_name = s;},
+                    None => {continue;},
+                }
                 // If a song satisfies Rekordbox audio format, we can skip
-                if song.get_sample_rate() <= 44100 && input_max_vol == PEAK_DB && song.is_rekordbox_format() {
+                if *song.get_sample_rate() <= 44100 && song.is_rekordbox_format() {
                     match song.get_format_type() {
-                        Lossless => {if song.get_bit_info() <= 16 {continue;}},
-                        Lossy => {if song.get_bit_info() <= 320 {continue;}},
+                        AudioFormatType::Lossless => {if *song.get_bit_info() <= 16 {continue;}},
+                        AudioFormatType::Lossy => {if *song.get_bit_info() <= 320 {continue;}},
+                        _ => {continue;}, //can't occur since this code only gets evaluated if the format type is not unsupported
                     }
+                }
+                // If a song does not have the specified converion tag set to 1
+                // move on to the next song
+                match song.get_tags() {
+                    Some(tags) => match tags.get(conversion_tag) {
+                        // If conversion tag is not 1, skip
+                        Some(tag) => {if tag != "1" {continue;}},
+                        // If song does not have conversion tag, skip
+                        None => continue,
+                    },
+                    // if song has no tags, skip
+                    None => continue,
                 }
                 let output_format;
                 let output_bit_info;
-                let output_sample_rate = cmp::min(song.get_sample_rate(), 44100);
+                let output_bit_type;
+                let output_sample_rate = cmp::min(*song.get_sample_rate(), 44100);
                 let output_codec;
                 match song.get_format_type() {
-                    Lossless => {
+                    AudioFormatType::Lossless => {
                         output_format = String::from("aiff");
-                        output_bit_info = cmp::min(song.get_bit_info(), 16);
+                        output_bit_type = "-sample_fmt";
+                        output_bit_info = format!("s{}", cmp::min(*song.get_bit_info(), 16));
                         output_codec = String::from("pcm_s16le");
                     },
-                    Lossy => {
+                    AudioFormatType::Lossy => {
                         output_format = String::from("mp3");
-                        output_bit_info = cmp::min(song.get_bit_info(), 320000);
+                        output_bit_type = "-audio_bitrate";
+                        output_bit_info = format!("{}", cmp::min(*song.get_bit_info(), 320000));
                         output_codec = String::from("mp3");
-                    }
+                    },
+                    _ => {continue;}, //can't occur as this code block only gets evaluated if the audio format is not unsupported
+                }
+                let convert_output = Command::new("ffmpeg")
+                    .arg("-y")
+                    .arg("-i")
+                    .arg(song.get_song_path())
+                    .arg("-acodec")
+                    .arg(output_codec)
+                    .arg("-ar")
+                    .arg(format!("{}", output_sample_rate))
+                    .arg("-write_id3v2")
+                    .arg("1")
+                    .arg("-metadata")
+                    .arg("REKORDBOX_READY=1")
+                    .arg("-metadata")
+                    .arg("CONVERT_FOR_REKORDBOX=0")
+                    .arg(output_bit_type)
+                    .arg(output_bit_info)
+                    .arg(format!("{}/{}.{}", output_dir, song_name, output_format))
+                    .output();
+                // If we ran into an error when converting the file, log it and then move on to the next file
+                match convert_output {
+                    Ok(o) => {
+                        if !o.status.success() {
+                            log::error!("Error with converting {}", song.get_song_path());
+                            io::stderr().write_all(&o.stderr).unwrap();
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Error with converting {}: {}", song.get_song_path(), e);
+                        continue;   
+                    },
                 }
             }
         }
     }
 }
-*/
+
 
 // Helper function to find the peak RMS of an audio file
 fn get_max_volume(path: &str) -> Option<f64> {
@@ -109,10 +166,10 @@ fn get_max_volume(path: &str) -> Option<f64> {
 
 fn main() {
     env_logger::init();
-    let mut files: Vec<String> = vec![];
-    build_list_of_files(path::Path::new("/home/klu/Musi/"), &mut files);
-    println!("list of files: {:?}", files);
-    println!("max vol of file: {}", get_max_volume("/home/klu/Music/Hanna - Intercession, On Behalf.flac").unwrap());
+    let mut test_vec = Vec::new();
+    test_vec.push(String::from("/home/kevlu93/Music/Rufus and Chaka - Body Heat (copy).flac"));
+    convert_song(test_vec, "/home/kevlu93/Music/file_conversion_test_output/","CONVERT_FOR_REKORDBOX");
+    println!("{:?}", song_info::from_file("/home/kevlu93/Music/file_conversion_test_output/Rufus and Chaka - Body Heat (copy).aiff").unwrap());
 }
 
 #[cfg(test)]
