@@ -34,6 +34,7 @@ pub fn build_list_of_files(dir: &path::Path, files: &mut Vec<String>) {
         }
     } else {
         log::error!("{} is not a directory!", dir.display());
+        std::process::exit(1);
     }
 }
 
@@ -177,17 +178,27 @@ fn main() {
     //iterate past first argument, which is the program name
     args.next();
     //grab argument. if there is none, exit the program
-    let folder;
     if let Some(a) = args.next() {
-        folder = path::Path::new(a.as_str());
+        let in_folder = path::Path::new(a.as_str());
         if let Some(a) = args.next() {
-            let tag = a;
-            let mut songs = Vec::new();
-            build_list_of_files(folder, &mut songs);
-            convert_song(songs, "/home/kevlu93/Music/file_conversion_test_output/",tag.as_str());
+            let out = path::Path::new(a.as_str());
+            if !out.is_dir() {
+                println!("Provided output path is not a directory!");
+                std::process::exit(1);
+            }
+            if let Some(a) = args.next() {
+                let tag = a;
+                let mut songs = Vec::new();
+                build_list_of_files(in_folder, &mut songs);
+                //okay to unwrap here because out was converted from a str originally
+                convert_song(songs, out.to_str().unwrap(), tag.as_str());
+            } else {
+                println!("Please provide the tag you used for the songs you want to convert! (ie. CONVERT_FOR_REKORDBOX");
+            }
         } else {
-            println!("Please provide the tag you used for the songs you want to convert! (ie. CONVERT_FOR_REKORDBOX");
-        } 
+            println!("Please provide the output directory for converted music!");
+            std::process::exit(1);
+        }
     } else {
         println!("Please provide a directory with your music!");
         std::process::exit(1);
