@@ -208,6 +208,7 @@ mod tests {
         assert!(from_file("missing.mp3").is_none());
     }
 
+    #[test]
     fn test_get_song_name_from_file() {
         let info = from_file("/home/klu/Music/soy division mix.mp3").unwrap();
         assert_eq!("soy division mix", info.get_song_name().unwrap());

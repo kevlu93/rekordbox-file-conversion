@@ -3,6 +3,7 @@ use std::io::{self, Result, Write};
 use std::process::{Command, Output};
 use std::{cmp, fs, path};
 use song_info::AudioFormatType;
+use std::env;
 mod song_info;
 
 /// Function iterates through the directory and grabs file paths
@@ -40,6 +41,8 @@ pub fn build_list_of_files(dir: &path::Path, files: &mut Vec<String>) {
 // Because volumedetect is a time-consuming process, user might not want to do it.
 // Perhaps implement concurrency to speed up conversions
 pub fn convert_song(files: Vec<String>, output_dir: &str, conversion_tag: &str) {
+    let n_songs = files.len();
+    let mut n_iterated = 0;
     for song in files.iter().filter_map(|s| song_info::from_file(s)) {
         match song.get_format_type() {
             AudioFormatType::Unsupported => {log::error!("{} has an unsupported file format!", song.get_song_path()); continue;},
@@ -121,6 +124,10 @@ pub fn convert_song(files: Vec<String>, output_dir: &str, conversion_tag: &str) 
                         continue;   
                     },
                 }
+                n_iterated = n_iterated + 1;
+                if n_iterated % 10 == 0 {
+                    println!("Gone through {} of {} songs", n_iterated, n_songs);
+                }
             }
         }
     }
@@ -166,10 +173,25 @@ fn get_max_volume(path: &str) -> Option<f64> {
 
 fn main() {
     env_logger::init();
-    let mut test_vec = Vec::new();
-    test_vec.push(String::from("/home/kevlu93/Music/Rufus and Chaka - Body Heat (copy).flac"));
-    convert_song(test_vec, "/home/kevlu93/Music/file_conversion_test_output/","CONVERT_FOR_REKORDBOX");
-    println!("{:?}", song_info::from_file("/home/kevlu93/Music/file_conversion_test_output/Rufus and Chaka - Body Heat (copy).aiff").unwrap());
+    let mut args = env::args();
+    //iterate past first argument, which is the program name
+    args.next();
+    //grab argument. if there is none, exit the program
+    let folder;
+    if let Some(a) = args.next() {
+        folder = path::Path::new(a.as_str());
+        if let Some(a) = args.next() {
+            let tag = a;
+            let mut songs = Vec::new();
+            build_list_of_files(folder, &mut songs);
+            convert_song(songs, "/home/kevlu93/Music/file_conversion_test_output/",tag.as_str());
+        } else {
+            println!("Please provide the tag you used for the songs you want to convert! (ie. CONVERT_FOR_REKORDBOX");
+        } 
+    } else {
+        println!("Please provide a directory with your music!");
+        std::process::exit(1);
+    }
 }
 
 #[cfg(test)]
