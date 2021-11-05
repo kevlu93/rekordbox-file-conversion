@@ -90,7 +90,7 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 _ => return Ok(()), //can't occur as this code block only gets evaluated if the audio format is supported
             }
             let mut output_file_path = output_dir.to_path_buf();
-            output_file_path.set_file_name(format!("{}.{}", song_name ,output_format));
+            output_file_path.push(format!("{}.{}", song_name ,output_format));
             let convert_output = Command::new("ffmpeg")
                 .arg("-y")
                 .arg("-i")
@@ -104,7 +104,7 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 .arg("-metadata")
                 .arg("REKORDBOX_READY=1")
                 .arg("-metadata")
-                .arg("CONVERT_FOR_REKORDBOX=0")
+                .arg(format!("{}=0",conversion_tag))
                 .arg(output_bit_type)
                 .arg(output_bit_info)
                 .arg(output_file_path)
