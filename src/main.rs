@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::process::{Command};
-use std::{cmp, fs, path::Path};
+use std::{cmp, fs, path::{Path, PathBuf}};
 use song_info::AudioFormatType;
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -9,7 +9,7 @@ mod song_info;
 use song_info::SongInfo;
 
 /// Function iterates through the directory and grabs file paths
-pub fn build_list_of_files(dir: &Path, files: &mut Vec<String>) {
+pub fn build_list_of_files(dir: &Path, files: &mut Vec<PathBuf>) {
     if dir.is_dir() {
         if let Ok(entries) = fs::read_dir(dir) {
             // Iterate through entries in the directory
@@ -20,12 +20,7 @@ pub fn build_list_of_files(dir: &Path, files: &mut Vec<String>) {
                     if path.is_dir() {
                         build_list_of_files(path.as_path(), files);
                     } else {
-                        // Else add file string to list
-                        if let Some(s) = path.to_str() {
-                            files.push(String::from(s));
-                        } else {
-                            log::error!("Error converting {:?} to a string", path);
-                        }
+                        files.push(path);
                     }
                 } else {
                     log::error!("I/O error while reading directory entry: {:?}", entry)
@@ -46,7 +41,7 @@ pub fn build_list_of_files(dir: &Path, files: &mut Vec<String>) {
 pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) -> Result<(), String> {
     match song.get_format_type() {
         AudioFormatType::Unsupported => {
-            return Err(format!("{} has an unsupported file format!", song.get_song_path()))
+            return Err(format!("{} has an unsupported file format!", song.get_song_path().to_string_lossy()))
             },
         _ => {
             let song_name;
@@ -94,10 +89,12 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 },
                 _ => return Ok(()), //can't occur as this code block only gets evaluated if the audio format is supported
             }
+            let mut output_file_path = output_dir.to_path_buf();
+            output_file_path.set_file_name(format!("{}.{}", song_name ,output_format));
             let convert_output = Command::new("ffmpeg")
                 .arg("-y")
                 .arg("-i")
-                .arg(Path::new(song.get_song_path()).to_str().unwrap())
+                .arg(song.get_song_path())
                 .arg("-acodec")
                 .arg(output_codec)
                 .arg("-ar")
@@ -110,26 +107,27 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 .arg("CONVERT_FOR_REKORDBOX=0")
                 .arg(output_bit_type)
                 .arg(output_bit_info)
-                .arg(format!("{}/{}.{}", output_dir.to_str().unwrap(), song_name, output_format))
+                .arg(output_file_path)
                 .output();
             // If we ran into an error when converting the file, log it and then move on to the next file
             match convert_output {
                 Ok(o) => {
                     if !o.status.success() {
                         io::stderr().write_all(&o.stderr).unwrap();
-                        Err(format!("Error with converting {}", song.get_song_path()))
+                        Err(format!("Error with converting {}", song.get_song_path().to_string_lossy()))
                     } else {
                         Ok(())
                     }
                 },
                 Err(e) => {
-                    Err(format!("Error with converting {}: {}", song.get_song_path(), e))
+                    Err(format!("Error with converting {}: {}", song.get_song_path().to_string_lossy(), e))
                 },
             }
         }
     } 
 }
 
+/**
 // Helper function to find the peak RMS of an audio file
 fn get_max_volume(path: &str) -> Option<f64> {
     let output = Command::new("ffmpeg")
@@ -166,6 +164,7 @@ fn get_max_volume(path: &str) -> Option<f64> {
     }
     max_volume
 }
+*/
 
 fn main() {
     env_logger::init();
@@ -190,7 +189,7 @@ fn main() {
                 let n_converted = Arc::new(Mutex::new(0));
                 let n_iterated = Arc::new(Mutex::new(0));
                 let mut handles = vec![];
-                for song in songs.iter().filter_map(|s| song_info::from_file(Path::new(s))) {
+                for song in songs.iter().filter_map(|s| song_info::from_file(s.as_path())) {
                     let n_converted = Arc::clone(&n_converted);
                     let n_iterated = Arc::clone(&n_iterated);
                     let out = Arc::clone(&out);
@@ -228,6 +227,7 @@ fn main() {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,3 +238,4 @@ mod tests {
         assert!(get_max_volume("dummy.mp3").is_none());
     }
 }
+*/

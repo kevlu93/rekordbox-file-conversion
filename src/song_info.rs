@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::io;
 use std::process::Command;
-use std::path;
+use std::path::{Path, PathBuf};
 
 /// enum for various audio formats
 #[derive(Debug)]
@@ -17,7 +17,7 @@ pub struct SongInfo {
     codec: String,
     format: String,
     format_type: AudioFormatType,
-    song_path: String,
+    song_path: PathBuf,
     sample_rate: usize,
     bit_info: usize,
     tags: Option<serde_json::Value>,
@@ -64,10 +64,10 @@ struct ProbeFormat {
 }
 
 /// Executes the ffprobe command to get the stream and format info.
-fn run_ffprobe(path: &path::Path) -> io::Result<Probe> {
+fn run_ffprobe(path: &Path) -> io::Result<Probe> {
     // Run ffprobe
     let output = Command::new("ffprobe")
-        .arg(path.to_str().unwrap())
+        .arg(path.to_path_buf())
         .arg("-show_streams")
         .arg("-show_format")
         .arg("-print_format")
@@ -78,7 +78,7 @@ fn run_ffprobe(path: &path::Path) -> io::Result<Probe> {
 }
 
 /// Initializes a Song struct
-pub fn from_file(path: &path::Path) -> Option<SongInfo> {
+pub fn from_file(path: &Path) -> Option<SongInfo> {
     let probe_result = run_ffprobe(path);
     if let Ok(p) = probe_result {
         match (p.streams, p.format) {
@@ -106,7 +106,7 @@ pub fn from_file(path: &path::Path) -> Option<SongInfo> {
                     codec: s[0].codec_name.clone(),
                     format: song_format,
                     format_type,
-                    song_path: path.to_str().unwrap().to_string(),
+                    song_path: path.to_path_buf(),
                     sample_rate: s[0].sample_rate.unwrap_or(0),
                     bit_info,
                     tags: f.tags,
@@ -136,16 +136,16 @@ impl SongInfo {
         &self.format_type
     }
 
-    pub fn get_song_path(&self) -> &str {
+    pub fn get_song_path(&self) -> &PathBuf {
         &self.song_path
     }
 
     pub fn get_song_name(&self) -> Option<&str> {
-        let path = path::Path::new(&self.song_path);
+        let path = Path::new(&self.song_path);
         if let Some(s) = path.file_name().unwrap().to_str() {
             return s.split('.').next();
         } else {
-            log::error!("Unable to parse out file name from path for {}", self.song_path);
+            log::error!("Unable to parse out file name from path for {}", self.song_path.to_string_lossy());
         }
         None
     }
@@ -176,13 +176,13 @@ mod tests {
 
     #[test]
     fn test_ffprobe_file_exists() {
-        let mut probe = run_ffprobe(path::Path::new("/home/klu/Music/soy division mix.mp3")).unwrap();
+        let mut probe = run_ffprobe(Path::new("/home/klu/Music/soy division mix.mp3")).unwrap();
         let mut format = probe.format.unwrap();
         let mut streams = probe.streams.unwrap();
         assert_eq!("mp3", format.format_name);
         assert_eq!(None, streams[0].sample_fmt);
 
-        probe = run_ffprobe(path::Path::new("/home/klu/Music/Hanna - Intercession, On Behalf.flac")).unwrap();
+        probe = run_ffprobe(Path::new("/home/klu/Music/Hanna - Intercession, On Behalf.flac")).unwrap();
         format = probe.format.unwrap();
         streams = probe.streams.unwrap();
         assert_eq!("flac", format.format_name);
@@ -193,26 +193,26 @@ mod tests {
 
     #[test]
     fn test_ffprobe_file_doesnt_exist() {
-        let probe = run_ffprobe(path::Path::new("fake.mp3")).unwrap();
+        let probe = run_ffprobe(Path::new("fake.mp3")).unwrap();
         assert!(probe.format.is_none());
         assert!(probe.streams.is_none());
     }
 
     #[test]
     fn test_create_songinfo_from_file() {
-        let info = from_file(path::Path::new("/home/klu/Music/soy division mix.mp3")).unwrap();
+        let info = from_file(Path::new("/home/klu/Music/soy division mix.mp3")).unwrap();
         assert_eq!(None, info.tags);
         assert_eq!("/home/klu/Music/soy division mix.mp3", info.song_path);
         assert_eq!(320000, info.bit_info);
 
-        assert!(from_file(path::Path::new("missing.mp3")).is_none());
+        assert!(from_file(Path::new("missing.mp3")).is_none());
     }
 
     #[test]
     fn test_get_song_name_from_file() {
-        let info = from_file(path::Path::new("/home/klu/Music/soy division mix.mp3")).unwrap();
+        let info = from_file(Path::new("/home/klu/Music/soy division mix.mp3")).unwrap();
         assert_eq!("soy division mix", info.get_song_name().unwrap());
 
-        assert!(from_file(path::Path::new("dummy")).unwrap().get_song_name().is_none());
+        assert!(from_file(Path::new("dummy")).unwrap().get_song_name().is_none());
     }
 }
