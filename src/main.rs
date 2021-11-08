@@ -53,22 +53,29 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
             if *song.get_sample_rate() <= 44100 && song.is_rekordbox_format() {
                 match song.get_format_type() {
                     AudioFormatType::Lossless => {if *song.get_bit_info() <= 16 {return Err(format!("Already Rekordbox format!"))}},
-                    AudioFormatType::Lossy => {if *song.get_bit_info() <= 320 {return Err(format!("Already Rekordbox format!"))}},
+                    AudioFormatType::Lossy => {if *song.get_bit_info() <= 320000 {return Err(format!("Already Rekordbox format!"))}},
                     _ => (), //can't occur since this code only gets evaluated if the format type is not unsupported
                 }
             }
-            // If a song does not have the specified converion tag set to 1
+            // If we are given a conversion tag, if a song does not have the specified conversion tag set to 1
             // move on to the next song
-            match song.get_tags() {
-                Some(tags) => match tags.get(conversion_tag) {
-                    // If conversion tag is not 1, skip
-                    Some(tag) => {if tag != "1" {return Err(format!("Not tagged for conversion!"))}},
-                    // If song does not have conversion tag, skip
+            let conversion_tag_arg;
+            if conversion_tag.len() > 0 {
+                match song.get_tags() {
+                    Some(tags) => match tags.get(conversion_tag) {
+                        // If conversion tag is not 1, skip
+                        Some(tag) => {if tag != "1" {return Err(format!("Not tagged for conversion!"))}},
+                        // If song does not have conversion tag, skip
+                        None => return Err(format!("Not tagged for conversion!")),
+                    },
+                    // if song has no tags, skip
                     None => return Err(format!("Not tagged for conversion!")),
-                },
-                // if song has no tags, skip
-                None => return Err(format!("Not tagged for conversion!")),
+                }
+                conversion_tag_arg = format!("{}=0", conversion_tag);
+            } else {
+                conversion_tag_arg = String::from(conversion_tag);
             }
+
             let output_format;
             let output_bit_info;
             let output_bit_type;
@@ -83,15 +90,17 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 },
                 AudioFormatType::Lossy => {
                     output_format = String::from("mp3");
-                    output_bit_type = "-audio_bitrate";
-                    output_bit_info = format!("{}", cmp::min(*song.get_bit_info(), 320000));
+                    output_bit_type = "-b:a";
+                    output_bit_info = format!("{}k", cmp::min(*song.get_bit_info(), 320000)/100);
                     output_codec = String::from("mp3");
                 },
                 _ => return Ok(()), //can't occur as this code block only gets evaluated if the audio format is supported
             }
             let mut output_file_path = output_dir.to_path_buf();
             output_file_path.push(format!("{}.{}", song_name ,output_format));
-            let convert_output = Command::new("ffmpeg")
+    
+            let mut convert_command = Command::new("ffmpeg");
+            convert_command
                 .arg("-y")
                 .arg("-i")
                 .arg(song.get_song_path())
@@ -102,15 +111,19 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 .arg("-write_id3v2")
                 .arg("1")
                 .arg("-metadata")
-                .arg("REKORDBOX_READY=1")
-                .arg("-metadata")
-                .arg(format!("{}=0",conversion_tag))
+                .arg("REKORDBOX_READY=1");
+            
+            if conversion_tag.len() > 0 {
+                convert_command
+                    .arg("-metadata")
+                    .arg(conversion_tag_arg);
+            }
+            convert_command
                 .arg(output_bit_type)
                 .arg(output_bit_info)
-                .arg(output_file_path)
-                .output();
+                .arg(output_file_path);
             // If we ran into an error when converting the file, log it and then move on to the next file
-            match convert_output {
+            match convert_command.output() {
                 Ok(o) => {
                     if !o.status.success() {
                         io::stderr().write_all(&o.stderr).unwrap();
@@ -125,6 +138,41 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
             }
         }
     } 
+}
+
+pub fn convert_songs_parallel(
+    songs: &Vec<PathBuf>, 
+    output_path: &Arc<String>, 
+    n_converted: &Arc<Mutex<i32>>, 
+    n_iterated: &Arc<Mutex<i32>>, 
+    tag: &Arc<String>,
+) {
+    let mut handles = vec![];
+    for song in songs.iter().filter_map(|s| song_info::from_file(s.as_path())) {
+        let n_converted = Arc::clone(n_converted);
+        let n_iterated = Arc::clone(n_iterated);
+        let out = Arc::clone(output_path);
+        let tag = Arc::clone(tag);
+        let handle = thread::spawn(move || {
+            let mut i = n_iterated.lock().unwrap();
+            *i += 1;
+            println!("Iterated through {} songs", *i);
+            let out_path = Path::new(out.as_str());
+            match convert_song(&song, out_path, &tag) {
+                Ok(_) => {
+                    let mut c = n_converted.lock().unwrap();
+                    *c += 1;
+                    println!("Converted {} songs", *c);
+                }, 
+                Err(e)  => println!("{}", e),
+            }
+            
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
 }
 
 /**
@@ -181,42 +229,18 @@ fn main() {
                 println!("Provided output path is not a directory!");
                 std::process::exit(1);
             }
+            let mut songs = Vec::new();
+            build_list_of_files(in_folder, &mut songs);
+            //okay to unwrap here because out was converted from a str originally
+            let n_converted = Arc::new(Mutex::new(0));
+            let n_iterated = Arc::new(Mutex::new(0));
+            let tag;
             if let Some(tag_arg) = args.next() {
-                let tag = Arc::new(tag_arg);
-                let mut songs = Vec::new();
-                build_list_of_files(in_folder, &mut songs);
-                //okay to unwrap here because out was converted from a str originally
-                let n_converted = Arc::new(Mutex::new(0));
-                let n_iterated = Arc::new(Mutex::new(0));
-                let mut handles = vec![];
-                for song in songs.iter().filter_map(|s| song_info::from_file(s.as_path())) {
-                    let n_converted = Arc::clone(&n_converted);
-                    let n_iterated = Arc::clone(&n_iterated);
-                    let out = Arc::clone(&out);
-                    let tag = Arc::clone(&tag);
-                    let handle = thread::spawn(move || {
-                        let mut i = n_iterated.lock().unwrap();
-                        *i += 1;
-                        println!("Iterated through {} songs", *i);
-                        let out_path = Path::new(out.as_str());
-                        match convert_song(&song, out_path, &tag) {
-                            Ok(_) => {
-                                let mut c = n_converted.lock().unwrap();
-                                *c += 1;
-                                println!("Converted {} songs", *c);
-                            }, 
-                            Err(e)  => println!("{}", e),
-                        }
-                        
-                    });
-                    handles.push(handle);
-                }
-                for handle in handles {
-                    handle.join().unwrap();
-                }
+                tag = Arc::new(tag_arg);
             } else {
-                println!("Please provide the tag you used for the songs you want to convert! (ie. CONVERT_FOR_REKORDBOX");
+                tag = Arc::new(String::from(""));
             }
+            convert_songs_parallel(&songs, &out, &n_converted, &n_iterated, &tag);
         } else {
             println!("Please provide the output directory for converted music!");
             std::process::exit(1);
