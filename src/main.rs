@@ -111,7 +111,7 @@ pub fn convert_song(song: &SongInfo, output_dir: &Path, conversion_tag: &str) ->
                 .arg("-write_id3v2")
                 .arg("1")
                 .arg("-metadata")
-                .arg("REKORDBOX_READY=1");
+                .arg("REKORDBOX=1");
             
             if conversion_tag.len() > 0 {
                 convert_command
