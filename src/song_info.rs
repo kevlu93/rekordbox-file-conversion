@@ -45,6 +45,35 @@ impl std::fmt::Display for SupportedAudioFormat {
     }
 }
 
+impl From<SupportedAudioFormat> for AudioFormatType {
+    fn from(value: SupportedAudioFormat) -> Self {
+        match &value {
+            SupportedAudioFormat::AIFF | SupportedAudioFormat::FLAC | SupportedAudioFormat::WAV => {
+                AudioFormatType::Lossless(value)
+            }
+            SupportedAudioFormat::MP3 | SupportedAudioFormat::OGG | SupportedAudioFormat::AAC => {
+                AudioFormatType::Lossy(value)
+            }
+        }
+    }
+}
+
+impl FromStr for AudioFormatType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(format) = s
+            .trim()
+            .to_lowercase()
+            .as_str()
+            .parse::<SupportedAudioFormat>()
+        {
+            Ok(format.into())
+        } else {
+            Ok(AudioFormatType::Unsupported)
+        }
+    }
+}
 /// Song struct that contains information to use for ffmpeg conversion command
 #[derive(Clone, Debug)]
 pub struct SongInfo {
@@ -95,13 +124,13 @@ where
 /// Helper struct that represents a format from ffprobe
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct ProbeFormat {
-    format: AudioFormatType,
+    format_name: AudioFormatType,
     #[serde(default)]
     tags: Option<serde_json::Value>,
 }
 
 /// Executes the ffprobe command to get the stream and format info.
-#[tracing::instrument(level = "debug", ret)]
+#[tracing::instrument(level = "info", ret)]
 fn run_ffprobe(path: &Path) -> Result<Probe> {
     // Run ffprobe
     let output = Command::new("ffprobe")
@@ -126,14 +155,14 @@ pub fn from_file(path: &Path) -> Result<SongInfo> {
             // unwraps are guaranteed to work, so this will not panic
 
             // based on the format type, bit info will either be the sample_fmt, or bit_rate
-            let bit_info = match f.format {
+            let bit_info = match f.format_name {
                 AudioFormatType::Lossless(_) => s[0].sample_fmt.unwrap_or(0),
                 AudioFormatType::Lossy(_) => s[0].bit_rate.unwrap_or(0),
                 _ => 0,
             };
             Ok(SongInfo {
                 codec: s[0].codec_name.clone(),
-                format: f.format,
+                format: f.format_name,
                 song_path: path.to_path_buf(),
                 sample_rate: s[0].sample_rate.unwrap_or(0),
                 bit_info,
