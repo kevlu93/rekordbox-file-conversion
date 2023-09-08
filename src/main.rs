@@ -181,10 +181,11 @@ pub fn convert_songs_parallel(songs: &Vec<PathBuf>, output_path: &str, tag: &str
                 let out_path = Path::new(&output_path_copy);
                 if let Err(e) = convert_song(&song, out_path, &tag_copy) {
                     tracing::error!(?e);
+                } else {
+                    let mut c = n_converted_lock.lock().unwrap();
+                    *c += 1;
+                    tracing::debug!(n_converted = *c, "Current number of converted songs");
                 }
-                let mut c = n_converted_lock.lock().unwrap();
-                *c += 1;
-                tracing::debug!(n_converted = *c, "Current number of converted songs");
             }
             Ok(())
         });

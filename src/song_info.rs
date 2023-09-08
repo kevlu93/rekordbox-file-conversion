@@ -121,9 +121,19 @@ where
     Ok(s.parse::<usize>().ok())
 }
 
+fn from_format_name_string<'de, D>(deserializer: D) -> Result<AudioFormatType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut s: String = Deserialize::deserialize(deserializer)?;
+    // See if we can parse the sample_fmt to get the bit depth. If not return 0.
+    s.parse::<AudioFormatType>().map_err(serde::de::Error::custom)
+}
+
 /// Helper struct that represents a format from ffprobe
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct ProbeFormat {
+    #[serde(deserialize_with = "from_format_name_string")]
     format_name: AudioFormatType,
     #[serde(default)]
     tags: Option<serde_json::Value>,
